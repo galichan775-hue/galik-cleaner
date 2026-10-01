@@ -1,206 +1,463 @@
 #!/bin/bash
 
 # ==========================================
-# GALIK CLEANER v2.0 - SYSTEM UTILITY
+# GALIK CLEANER v3.1 - STEALTH EDITION
+# + Animated cat + Anti-forensics
 # ==========================================
 
-# Кольорова палітра
 RED='\033[0;31m'
 GREEN='\033[0;32m'
-BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 YELLOW='\033[1;33m'
 PURPLE='\033[0;35m'
-BOLD='\033[1m'
-NC='\033[0m' # No Color
+WHITE='\033[1;37m'
+DIM='\033[2m'
+NC='\033[0m'
 
-# Перевірка на наявність root-прав при виконанні критичних системних дій
-check_root() {
-    if [ "$EUID" -ne 0 ]; then
-        echo -e "${RED}[!] Ця операція вимагає прав root (sudo).${NC}"
-        return 1
+HISTFILE=/dev/null
+set +o history 2>/dev/null
+unset HISTFILE
+
+STEALTH_PREFIX=".systemd-private-$(head -c 8 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+STEALTH_DIR="/tmp/${STEALTH_PREFIX}"
+STEALTH_NAME="${STEALTH_NAME:-systemd-journald}"
+CAT_PID=""
+CAT_FRAME=0
+CAT_STATE="idle"
+
+cleanup_terminal() {
+    if [[ -n "$CAT_PID" ]]; then
+        kill "$CAT_PID" 2>/dev/null
     fi
-    return 0
+    rm -rf "$STEALTH_DIR" 2>/dev/null
+    rm -rf /tmp/.galik-* 2>/dev/null
+    printf '\033[0m'
+    stty sane 2>/dev/null
 }
-
-draw_banner() {
-    clear
-    echo -e "${CYAN}╔══════════════════════════════════════════════════════╗${NC}"
-    echo -e "${BOLD}${PURPLE}║  ██████╗  █████╗ ██╗     ██╗██╗  ██╗  ██████╗██╗     ║${NC}"
-    echo -e "${BOLD}${PURPLE}║ ██╔════╝ ██╔══██╗██║     ██║██║ ██╔╝  ██╔═══╝██║     ║${NC}"
-    echo -e "${BOLD}${PURPLE}║ ██║  ███╗███████║██║     ██║█████╔╝   ██║    ██║     ║${NC}"
-    echo -e "${BOLD}${PURPLE}║ ██║   ██║██╔══██║██║     ██║██╔═██╗   ██║    ██║     ║${NC}"
-    echo -e "${BOLD}${PURPLE}║ ╚██████╔╝██║  ██║███████╗██║██║  ██╗  ╚█████████████╗║${NC}"
-    echo -e "${BOLD}${PURPLE}║  ╚═════╝ ╚═╝  ╚═╝╚══════╝╚═╝╚═╝  ╚═╝   ╚═════╝╚══════╝║${NC}"
-    echo -e "${BOLD}${YELLOW}║               --- ADVANCED CLEANER v2.0 ---          ║${NC}"
-    echo -e "${CYAN}╚══════════════════════════════════════════════════════╝${NC}"
-}
+trap cleanup_terminal EXIT INT TERM
 
 pause() {
-    echo ""
-    read -rp "Натисніть Enter для продовження..."
+    echo
+    read -rp "Нажмите Enter для продолжения..."
 }
 
-# --- КАТАЛОГ 1: USB DOOMSDAY ---
-usb_menu() {
-    draw_banner
-    echo -e "${YELLOW}[ МОДУЛЬ: USB CLEANER ]${NC}"
-    echo -e "1) ${RED}Стирання слідів поточного USB-пристрою${NC}"
-    echo -e "2) Повернутися в головне меню"
-    echo ""
-    read -rp "Оберіть опцію [1-2]: " usb_opt
+header() {
+    clear
+    printf '%b\n' "${CYAN}+--------------------------------------------------+${NC}"
+    printf '%b\n' "${PURPLE}|              G A L I K   C L E A N E R           |${NC}"
+    printf '%b\n' "${PURPLE}|                    [::]                           |${NC}"
+    printf '%b\n' "${YELLOW}|           STEALTH EDITION v3.1                    |${NC}"
+    printf '%b\n' "${CYAN}+--------------------------------------------------+${NC}"
+    echo
+}
 
-    if [ "$usb_opt" = "1" ]; then
-        check_root || { pause; return; }
+cat_sprite() {
+    case "$CAT_STATE" in
+        sleep)
+            printf '%s' "
+   /\\_/\\
+  ( -.- )   zZ
+  (  ..  )
+   \`----'"
+            ;;
+        happy)
+            printf '%s' "
+   /\\_/\\
+  ( ^.^ )   ♥
+  (  ω   )
+   \`----'"
+            ;;
+        angry)
+            printf '%s' "
+   /\\_/\\
+  ( >_< )   !!
+  (  ..  )
+   \`----'"
+            ;;
+        *)
+            if (( CAT_FRAME % 6 == 0 )); then
+                printf '%s' "
+   /\\_/\\
+  ( -.- )
+  (  ..  )
+   \`----'"
+            else
+                printf '%s' "
+   /\\_/\\
+  ( o.o )
+  (  ..  )
+   \`----'"
+            fi
+            ;;
+    esac
+}
 
-        echo -e "${CYAN}[*] Пошук змонтованих USB-накопичувачів...${NC}"
-        
-        # Знаходимо точку монтування USB
-        mount_point=$(lsblk -o MOUNTPOINT,TRAN | grep 'usb' | awk '{print $1}' | head -n 1)
-        usb_dev=$(lsblk -o PATH,TRAN | grep 'usb' | awk '{print $1}' | head -n 1)
+draw_cat() {
+    local rows cols
+    rows=$(tput lines 2>/dev/null || echo 24)
+    cols=$(tput cols 2>/dev/null || echo 80)
+    printf '\0337'
+    printf '\033[%d;2H' $((rows - 5))
+    printf '%b' "${DIM}${PURPLE}"
+    cat_sprite
+    printf '%b' "${NC}"
+    printf '\0338'
+}
 
-        if [ -n "$mount_point" ]; then
-            echo -e "${YELLOW}[*] Демонтування $mount_point...${NC}"
-            umount -f "$mount_point" 2>/dev/null
-        fi
-
-        if [ -n "$usb_dev" ]; then
-            echo -e "${YELLOW}[*] Відключення USB-пристрою на рівні шини...${NC}"
-            dev_name=$(basename "$usb_dev")
-            sys_path=$(readlink -f /sys/class/block/"$dev_name"/../..)
-            if [ -e "$sys_path/driver/unbind" ]; then
-                echo "$(basename "$sys_path")" > "$sys_path/driver/unbind" 2>/dev/null
+cat_loop() {
+    while true; do
+        CAT_FRAME=$((CAT_FRAME + 1))
+        draw_cat
+        if [[ "$CAT_STATE" == "happy" || "$CAT_STATE" == "angry" ]]; then
+            if (( CAT_FRAME % 8 == 0 )); then
+                CAT_STATE="idle"
             fi
         fi
-
-        echo -e "${YELLOW}[*] Перезавантаження правил udev...${NC}"
-        udevadm control --reload-rules && udevadm trigger
-
-        echo -e "${GREEN}[+] USB-пристрій відключено та видалено з активної пам'яті шини.${NC}"
-        echo -e "${CYAN}[i] При повторному підключенні пристрій буде розпізнано заново.${NC}"
-        pause
-    fi
+        sleep 0.5
+    done
 }
 
-# --- КАТАЛОГ 2: DOOMSDAY (ФАЙЛИ ТА ПРОЦЕСИ) ---
+start_cat() {
+    cat_loop &
+    CAT_PID=$!
+    disown 2>/dev/null
+}
+
+set_cat() {
+    CAT_STATE="$1"
+    CAT_FRAME=0
+    draw_cat
+}
+
+wipe_traces() {
+    [[ -f "$HOME/.local/share/recently-used.xbel" ]] && : > "$HOME/.local/share/recently-used.xbel" 2>/dev/null
+    : > "$HOME/.bash_history" 2>/dev/null
+    : > "$HOME/.zsh_history" 2>/dev/null
+}
+
+prepare_stealth_dir() {
+    mkdir -p "$STEALTH_DIR" 2>/dev/null
+    chmod 700 "$STEALTH_DIR" 2>/dev/null
+}
+
+require_path() {
+    local p="$1"
+    p="${p/#\~/$HOME}"
+    printf '%s' "$p"
+}
+
+usb_menu() {
+    while true; do
+        header
+        printf '%b\n' "${YELLOW}[ USB CLEANER — STEALTH ]${NC}"
+        echo "1) Очистить временные файлы USB"
+        echo "2) Показать подключённые USB"
+        echo "3) Назад"
+        echo
+        read -rp "Выберите [1-3]: " opt
+
+        case "$opt" in
+            1)
+                echo
+                read -rp "Путь к флешке/каталогу: " usb_path
+                usb_path="$(require_path "$usb_path")"
+
+                if [[ -z "$usb_path" || ! -d "$usb_path" ]]; then
+                    printf '%b\n' "${RED}[!] Каталог не найден.${NC}"
+                    set_cat angry
+                    pause
+                    continue
+                fi
+
+                echo
+                printf '%b\n' "${YELLOW}Содержимое каталога:${NC}"
+                find "$usb_path" -maxdepth 2 -type f 2>/dev/null | head -30
+                echo
+                read -rp "Удалить временные файлы? [y/N]: " confirm
+
+                if [[ "$confirm" =~ ^[Yy]$ ]]; then
+                    set_cat sleep
+                    find "$usb_path" -type f \( \
+                        -name '*.tmp' -o \
+                        -name '*.log' -o \
+                        -name '*.cache' \
+                    \) -exec shred -uzn 1 {} \; 2>/dev/null
+                    wipe_traces
+                    set_cat happy
+                    printf '%b\n' "${GREEN}[+] Временные файлы удалены.${NC}"
+                else
+                    printf '%b\n' "${CYAN}[i] Отмена.${NC}"
+                fi
+                pause
+                ;;
+            2)
+                header
+                printf '%b\n' "${YELLOW}Подключённые USB-устройства:${NC}"
+                lsblk -o NAME,SIZE,FSTYPE,TYPE,MOUNTPOINTS,TRAN 2>/dev/null | awk 'NR==1 || $6=="usb"'
+                pause
+                ;;
+            3) return ;;
+            *) printf '%b\n' "${RED}[!] Неверный выбор.${NC}"; set_cat angry; sleep 1 ;;
+        esac
+    done
+}
+
 doomsday_menu() {
-    draw_banner
-    echo -e "${YELLOW}[ МОДУЛЬ: DOOMSDAY (ПРОЦЕСИ ТА ФАЙЛИ) ]${NC}"
-    echo -e "1) ${RED}Повне знищення цільових JAR/процесів та логів${NC}"
-    echo -e "2) Прихований запуск JAR (без фонового виводу)${NC}"
-    echo -e "3) Повернутися в головне меню"
-    echo ""
-    read -rp "Оберіть опцію [1-3]: " doom_opt
+    while true; do
+        header
+        printf '%b\n' "${YELLOW}[ JAR / CHEAT CLEANER — STEALTH ]${NC}"
+        echo "1) Проверить JAR"
+        echo "2) Запустить JAR в stealth режиме"
+        echo "3) Запустить JAR через memfd"
+        echo "4) Остановить Java-процесс по PID"
+        echo "5) Назад"
+        echo
+        read -rp "Выберите [1-5]: " opt
 
-    if [ "$doom_opt" = "1" ]; then
-        read -rp "Введіть маску або назву файлу для знищення (наприклад, cheat або test.jar): " target_pattern
-        
-        if [ -z "$target_pattern" ]; then
-            echo -e "${RED}[!] Маску не вказано.${NC}"
-            pause
-            return
-        fi
+        case "$opt" in
+            1)
+                echo
+                read -rp "Полный путь до JAR: " jar_path
+                jar_path="$(require_path "$jar_path")"
 
-        echo -e "${RED}[*] Зупинка відповідних Java-процесів...${NC}"
-        pkill -f "$target_pattern" 2>/dev/null
+                if [[ ! -f "$jar_path" ]]; then
+                    printf '%b\n' "${RED}[!] JAR-файл не найден.${NC}"
+                    set_cat angry
+                    pause
+                    continue
+                fi
 
-        echo -e "${YELLOW}[*] Безповоротне видалення файлів (shred)...${NC}"
-        # Shred: 3 проходи затирання + затирання нулями + видалення
-        find ~ /tmp /var/tmp -maxdepth 4 -name "*${target_pattern}*" -type f -exec shred -u -z -n 3 {} \; 2>/dev/null
+                printf '%b\n' "${GREEN}[+] Файл найден:${NC} $jar_path"
+                ls -lh "$jar_path"
+                echo
+                printf '%b\n' "${CYAN}[i] Java: $(command -v java 2>/dev/null || echo 'не найдена')${NC}"
+                printf '%b\n' "${CYAN}[i] SHA256: $(sha256sum "$jar_path" 2>/dev/null | awk '{print $1}')${NC}"
+                pause
+                ;;
 
-        echo -e "${YELLOW}[*] Очищення тимчасового кешу додатків...${NC}"
-        rm -rf ~/.cache/* 2>/dev/null
+            2)
+                echo
+                read -rp "Полный путь до JAR: " jar_path
+                jar_path="$(require_path "$jar_path")"
 
-        echo -e "${GREEN}[+] Процеси зупинено, відповідні файли безповоротно знищено.${NC}"
-        pause
+                if [[ ! -f "$jar_path" ]]; then
+                    printf '%b\n' "${RED}[!] JAR-файл не найден.${NC}"
+                    set_cat angry
+                    pause
+                    continue
+                fi
 
-    elif [ "$doom_opt" = "2" ]; then
-        read -rp "Введіть повний шлях до JAR файлу: " jar_path
-        
-        # Розгортання ~ у повний шлях
-        jar_path="${jar_path/#\~/$HOME}"
+                if ! command -v java >/dev/null 2>&1; then
+                    printf '%b\n' "${RED}[!] Java не установлена.${NC}"
+                    set_cat angry
+                    pause
+                    continue
+                fi
 
-        if [ ! -f "$jar_path" ]; then
-            echo -e "${RED}[!] Файл не знайдено за вказаним шляхом!${NC}"
-            pause
-            return
-        fi
+                set_cat sleep
+                prepare_stealth_dir
 
-        echo -e "${CYAN}[*] Автономний запуск у фоновому режимі...${NC}"
-        
-        # Відв'язуємо процес від терміналу і глушимо stdout/stderr
-        nohup java -jar "$jar_path" >/dev/null 2>&1 &
-        disown
+                local hidden_jar="$STEALTH_DIR/${STEALTH_NAME}.jar"
+                cp "$jar_path" "$hidden_jar" 2>/dev/null
+                chmod 600 "$hidden_jar" 2>/dev/null
 
-        echo -e "${GREEN}[+] Файл успішно запущено автономно.${NC}"
-        pause
-    fi
+                unset JAVA_TOOL_OPTIONS
+                unset _JAVA_OPTIONS
+                export JAVA_TOOL_OPTIONS="-XX:-UsePerfData"
+
+                (
+                    cd "$STEALTH_DIR" 2>/dev/null
+                    exec -a "$STEALTH_NAME" setsid java -jar "$hidden_jar" </dev/null >/dev/null 2>&1 &
+                    echo $! > "$STEALTH_DIR/.pid"
+                )
+
+                sleep 2
+                local pid
+                pid=$(cat "$STEALTH_DIR/.pid" 2>/dev/null)
+
+                if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+                    set_cat happy
+                    printf '%b\n' "${GREEN}[+] JAR запущен (stealth).${NC}"
+                    printf '%b\n' "${DIM}[i] PID: $pid | маска: $STEALTH_NAME${NC}"
+                else
+                    set_cat angry
+                    printf '%b\n' "${RED}[!] Процесс не запустился.${NC}"
+                fi
+                pause
+                ;;
+
+            3)
+                echo
+                read -rp "Полный путь до JAR: " jar_path
+                jar_path="$(require_path "$jar_path")"
+
+                if [[ ! -f "$jar_path" ]]; then
+                    printf '%b\n' "${RED}[!] JAR-файл не найден.${NC}"
+                    set_cat angry
+                    pause
+                    continue
+                fi
+
+                if ! command -v java >/dev/null 2>&1; then
+                    printf '%b\n' "${RED}[!] Java не установлена.${NC}"
+                    set_cat angry
+                    pause
+                    continue
+                fi
+
+                set_cat sleep
+                prepare_stealth_dir
+
+                local memfd_jar="$STEALTH_DIR/.memfd-${STEALTH_NAME}"
+                cp "$jar_path" "$memfd_jar"
+                chmod 600 "$memfd_jar"
+
+                (
+                    exec 9< "$memfd_jar"
+                    rm -f "$memfd_jar" 2>/dev/null
+                    cd "$STEALTH_DIR" 2>/dev/null
+                    unset JAVA_TOOL_OPTIONS
+                    export JAVA_TOOL_OPTIONS="-XX:-UsePerfData"
+                    exec -a "$STEALTH_NAME" setsid java -jar /proc/self/fd/9 </dev/null >/dev/null 2>&1 &
+                    echo $! > "$STEALTH_DIR/.pid"
+                )
+
+                sleep 2
+                local pid
+                pid=$(cat "$STEALTH_DIR/.pid" 2>/dev/null)
+
+                if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+                    set_cat happy
+                    printf '%b\n' "${GREEN}[+] JAR запущен (memfd stealth).${NC}"
+                    printf '%b\n' "${DIM}[i] PID: $pid | файл удалён с диска${NC}"
+                else
+                    set_cat angry
+                    printf '%b\n' "${RED}[!] Процесс не запустился.${NC}"
+                fi
+                pause
+                ;;
+
+            4)
+                echo
+                read -rp "PID Java-процесса: " pid
+
+                if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null; then
+                    kill "$pid" 2>/dev/null
+                    sleep 1
+                    if kill -0 "$pid" 2>/dev/null; then
+                        kill -9 "$pid" 2>/dev/null
+                    fi
+                    set_cat happy
+                    printf '%b\n' "${GREEN}[+] Процесс $pid остановлен.${NC}"
+                else
+                    set_cat angry
+                    printf '%b\n' "${RED}[!] PID не найден.${NC}"
+                fi
+                pause
+                ;;
+
+            5) return ;;
+            *) printf '%b\n' "${RED}[!] Неверный выбор.${NC}"; set_cat angry; sleep 1 ;;
+        esac
+    done
 }
 
-# --- КАТАЛОГ 3: CLEANER (САМОЗНИЩЕННЯ СЛІДІВ) ---
 cleaner_menu() {
-    draw_banner
-    echo -e "${YELLOW}[ МОДУЛЬ: CLEANER (ОЧИЩЕННЯ ІСТОРІЇ) ]${NC}"
-    echo -e "1) ${RED}Очистити буфер обміну та історію команд${NC}"
-    echo -e "2) Повернутися в головне меню"
-    echo ""
-    read -rp "Оберіть опцію [1-2]: " clean_opt
+    while true; do
+        header
+        printf '%b\n' "${YELLOW}[ LOCAL CLEANER — STEALTH ]${NC}"
+        echo "1) Очистить ��эш пользователя"
+        echo "2) Очистить буфер обмена"
+        echo "3) Очистить следы (history)"
+        echo "4) Назад"
+        echo
+        read -rp "Выберите [1-4]: " opt
 
-    if [ "$clean_opt" = "1" ]; then
-        echo -e "${YELLOW}[*] Очищення буфера обміну (X11 / Wayland)...${NC}"
-        
-        # Перевірка інструментів буфера обміну
-        if command -v wl-copy &>/dev/null; then
-            wl-copy --clear
-        fi
-        if command -v xclip &>/dev/null; then
-            echo -n "" | xclip -selection clipboard 2>/dev/null
-            echo -n "" | xclip -selection primary 2>/dev/null
-        fi
-        if command -v xsel &>/dev/null; then
-            xsel -cb 2>/dev/null
-            xsel -cp 2>/dev/null
-        fi
-
-        echo -e "${YELLOW}[*] Видалення згадок скрипта з файлів історії shell...${NC}"
-        
-        script_name=$(basename "$0")
-        
-        if [ -f ~/.bash_history ]; then
-            sed -i "/$script_name/d" ~/.bash_history
-            sed -i "/galik/d" ~/.bash_history
-        fi
-        
-        if [ -f ~/.zsh_history ]; then
-            sed -i "/$script_name/d" ~/.zsh_history
-            sed -i "/galik/d" ~/.zsh_history
-        fi
-
-        # Скидання історії в поточній сесії
-        history -c 2>/dev/null
-
-        echo -e "${GREEN}[+] Буфер обміну та історію shell-файлів зачищено!${NC}"
-        pause
-        exit 0
-    fi
+        case "$opt" in
+            1)
+                echo
+                read -rp "Очистить ~/.cache ? [y/N]: " confirm
+                if [[ "$confirm" =~ ^[Yy]$ ]]; then
+                    set_cat sleep
+                    find "$HOME/.cache/" -mindepth 1 -maxdepth 1 -exec rm -rf {} \; 2>/dev/null
+                    set_cat happy
+                    printf '%b\n' "${GREEN}[+] Кэш очищен.${NC}"
+                else
+                    printf '%b\n' "${CYAN}[i] Отмена.${NC}"
+                fi
+                pause
+                ;;
+            2)
+                echo
+                if command -v wl-copy >/dev/null 2>&1; then
+                    wl-copy --clear 2>/dev/null
+                    printf '%b\n' "${GREEN}[+] Wayland clipboard очищен.${NC}"
+                elif command -v xclip >/dev/null 2>&1; then
+                    printf '' | xclip -selection clipboard 2>/dev/null
+                    printf '%b\n' "${GREEN}[+] X11 clipboard очищен.${NC}"
+                elif command -v xsel >/dev/null 2>&1; then
+                    xsel --clipboard --clear 2>/dev/null
+                    printf '%b\n' "${GREEN}[+] X11 clipboard очищен.${NC}"
+                else
+                    printf '%b\n' "${RED}[!] wl-copy/xclip/xsel не найден.${NC}"
+                    set_cat angry
+                fi
+                pause
+                ;;
+            3)
+                echo
+                read -rp "Удалить history? [y/N]: " confirm
+                if [[ "$confirm" =~ ^[Yy]$ ]]; then
+                    wipe_traces
+                    set_cat happy
+                    printf '%b\n' "${GREEN}[+] Следы очищены.${NC}"
+                fi
+                pause
+                ;;
+            4) return ;;
+            *) printf '%b\n' "${RED}[!] Неверный выбор.${NC}"; set_cat angry; sleep 1 ;;
+        esac
+    done
 }
 
-# --- ГОЛОВНИЙ ЦИКЛ ---
+start_cat
+
 while true; do
-    draw_banner
-    echo -e "${BOLD}${BLUE}Головне меню:${NC}"
-    echo -e "1) 📁 Каталог: ${CYAN}USB DoomsDay Cleaner${NC}"
-    echo -e "2) 📁 Каталог: ${RED}DoomsDay (Процеси та файли)${NC}"
-    echo -e "3) 📁 Каталог: ${GREEN}Cleaner (Самознищення слідів)${NC}"
-    echo -e "4) ❌ Вийти"
-    echo -e "${CYAN}══════════════════════════════════════════════════════${NC}"
-    read -rp "Будь ласка, оберіть каталог [1-4]: " main_opt
+    header
+    printf '%b\n' "${WHITE}Главное меню:${NC}"
+    echo "1) [USB] USB Cleaner"
+    echo "2) [JAR] JAR / Cheat Cleaner"
+    echo "3) [SYS] Local Cleaner"
+    echo "4) [UPD] О��новить Cleaner"
+    echo "5) [X]   Выход"
+    printf '%b\n' "${CYAN}+--------------------------------------------------+${NC}"
+    read -rp "Выберите [1-5]: " main_opt
 
     case "$main_opt" in
         1) usb_menu ;;
         2) doomsday_menu ;;
         3) cleaner_menu ;;
-        4) clear; echo -e "${GREEN}Сесію завершено.${NC}"; exit 0 ;;
-        *) echo -e "${RED}Невірний вибір.${NC}"; sleep 1 ;;
+        4)
+            clear
+            printf '%b\n' "${CYAN}[*] Обновление...${NC}"
+            if command -v curl >/dev/null 2>&1; then
+                bash <(curl -fsSL https://raw.githubusercontent.com/galichan775-hue/galik-cleaner/main/cleaner.sh)
+            elif command -v wget >/dev/null 2>&1; then
+                wget -qO- https://raw.githubusercontent.com/galichan775-hue/galik-cleaner/main/cleaner.sh | bash
+            else
+                printf '%b\n' "${RED}[!] Нужен curl или wget.${NC}"
+                pause
+            fi
+            ;;
+        5)
+            clear
+            printf '%b\n' "${GREEN}Сессия завершена.${NC}"
+            exit 0
+            ;;
+        *)
+            printf '%b\n' "${RED}[!] Неверный выбор.${NC}"
+            set_cat angry
+            sleep 1
+            ;;
     esac
 done
