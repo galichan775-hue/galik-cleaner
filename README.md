@@ -1,57 +1,32 @@
-# galik-cleaner
+# GALIK CLEANER
 
-A lightweight project repository for the `galik-cleaner` app.
+GALIK CLEANER is a Bash-based utility for removing junk files, clearing temporary data, cleaning USB traces, and managing Java/JAR-related artifacts in a stealth-oriented workflow.
 
 ## Overview
 
-This repository is currently in its initial setup stage. It does not yet contain source code, build configuration, or application files.
+This project keeps a single production script: `cleaner.sh`.
 
-The README is intended to provide a starting point for documenting the project as it grows.
+It is intended for:
+- cleaning temporary files and cache
+- removing trace data from the system
+- checking JAR files
+- managing Java processes
+- cleaning USB-related junk
+- hiding some operational traces during execution
 
-## Current status
+## Usage
 
-- Repository: `galichan775-hue/galik-cleaner`
-- Visibility: Public
-- Default branch: `main`
-- Initial project state: empty / scaffold pending
-
-## Getting started
-
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/galichan775-hue/galik-cleaner.git
-   cd galik-cleaner
-   ```
-2. Add your project files.
-3. Install dependencies if needed.
-4. Run the app or scripts according to your project setup.
-
-## Suggested structure
-
-```text
-galik-cleaner/
-├── README.md
-├── src/
-├── tests/
-├── docs/
-├── package.json   # or another project manifest
-└── .gitignore
+```bash
+chmod +x cleaner.sh
+./cleaner.sh
 ```
-
-## Development
-
-Add instructions for:
-
-- environment setup
-- dependency installation
-- running locally
-- tests
-- linting and formatting
-
-## License
-
-This project does not currently declare a license. Add a license file if you want to publish it under a specific open-source license.
 
 ## Notes
 
-This repository is ready for the next steps in development. You can replace this placeholder README with project-specific documentation as soon as the source code is added.
+- Only the newest version remains in the repository.
+- Older generated copies have been removed to keep the project clean and maintainable.
+- This script is meant for use on systems where you have legitimate permission to clean files and manage processes.
+
+## Version
+
+GALIK CLEANER v3.1 - STEALTH EDITION
